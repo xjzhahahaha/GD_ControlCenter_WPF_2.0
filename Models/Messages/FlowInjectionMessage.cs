@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Messaging.Messages;
+using CommunityToolkit.Mvvm.Messaging.Messages;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -50,6 +50,11 @@ namespace GD_ControlCenter_WPF.Models.Messages
         /// 峰结束时间点，单位秒 (对应界面：峰结束(s))
         /// </summary>
         public double EndTime { get; set; }
+
+        /// <summary>
+        /// 计算所得的峰面积 (梯形积分)
+        /// </summary>
+        public double PeakArea { get; set; }
     }
 
     /// <summary>

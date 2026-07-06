@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Messaging;
+using CommunityToolkit.Mvvm.Messaging;
 using GD_ControlCenter_WPF.Models.Messages;
 using GD_ControlCenter_WPF.Models.Spectrometer;
 using GD_ControlCenter_WPF.ViewModels;
@@ -6,69 +6,81 @@ using GD_ControlCenter_WPF.Services.Spectrometer.Logic;
 using ScottPlot;
 using System.Windows.Controls;
 using System;
+using System.Collections.Generic;
 
 namespace GD_ControlCenter_WPF.Views.Pages
 {
     public partial class FlowInjectionView : UserControl
     {
-        private ScottPlot.Plottables.DataLogger _dataLogger;
-        private double _timeCounter = 0;
+        private readonly Dictionary<string, ScottPlot.Plottables.DataLogger> _dataLoggers = new();
+        private readonly Color[] _palette = new[] { Colors.Red, Colors.Blue, Colors.Green, Colors.Orange, Colors.Purple, Colors.Magenta, Colors.Cyan, Colors.Olive };
 
         public FlowInjectionView()
         {
             InitializeComponent();
+            
+            // X轴为时间秒数，Y轴为强度
+            TimeSeriesPlot.Plot.XLabel("时间 (秒)");
+            TimeSeriesPlot.Plot.YLabel("发光强度");
 
-            // 初始化下方的时序趋势图 DataLogger
-            _dataLogger = TimeSeriesPlot.Plot.Add.DataLogger();
-            TimeSeriesPlot.Plot.Axes.AutoScale();
-
-            // 注册消息：接收光谱仪数据
+            // 订阅：全谱图刷新
             WeakReferenceMessenger.Default.Register<SpectralDataMessage>(this, (r, m) =>
             {
-                Dispatcher.Invoke(() => RenderPlots(m.Value));
+                Dispatcher.BeginInvoke(() => RenderFullSpectrum(m.Value));
             });
 
-            // 右键菜单配置（寻峰逻辑）
-            SpecPlot.Menu?.Clear();
-            SpecPlot.Menu?.Add("捕捉此点作为元素峰", (p) =>
+            // 订阅：清空多元素时序图
+            WeakReferenceMessenger.Default.Register<SwitchPlotElementMessage>(this, (r, m) =>
             {
-                double wl = SpecPlot.Plot.Axes.Bottom.Range.Center;
-                if (this.DataContext is FlowInjectionViewModel vm)
+                if (m.Value == "CLEAR_ALL")
                 {
-                    vm.PickedElements.Add($"峰@{wl:F2}");
+                    Dispatcher.Invoke(() => 
+                    {
+                        TimeSeriesPlot.Plot.Clear();
+                        _dataLoggers.Clear();
+                        TimeSeriesPlot.Refresh();
+                    });
                 }
+            });
+
+            // 订阅：时序图坐标点刷新 (多元素并发)
+            WeakReferenceMessenger.Default.Register<FlowInjectionPlotMessage>(this, (r, m) =>
+            {
+                Dispatcher.BeginInvoke(() => RenderTimeSeriesPoint(m.Value));
             });
         }
 
-        private void RenderPlots(SpectralData data)
+        private void RenderFullSpectrum(SpectralData data)
         {
             if (data.Wavelengths == null || data.Wavelengths.Length == 0) return;
 
-            var vm = this.DataContext as FlowInjectionViewModel;
-            if (vm == null) return;
-
-            double targetWl = vm.GetTargetWavelength();
-
-            // 1. 渲染上图：实时全谱
             SpecPlot.Plot.Clear();
             var fullLine = SpecPlot.Plot.Add.Scatter(data.Wavelengths, data.Intensities);
             fullLine.MarkerSize = 0;
             fullLine.Color = ScottPlot.Colors.MediumPurple;
             SpecPlot.Plot.Axes.AutoScale();
             SpecPlot.Refresh();
+        }
 
-            // 2. 渲染下图：单元素时序（流动注射核心）
-            if (targetWl > 0)
+        private void RenderTimeSeriesPoint(PlotPoint pt)
+        {
+            if (!_dataLoggers.ContainsKey(pt.ElementName))
             {
-                double currentIntensity = SpectrometerLogic.GetIntensityAtWavelength(data, targetWl);
+                var logger = TimeSeriesPlot.Plot.Add.DataLogger();
+                logger.LegendText = pt.ElementName;
+                logger.Color = _palette[_dataLoggers.Count % _palette.Length];
+                logger.LineWidth = 2;
+                _dataLoggers[pt.ElementName] = logger;
+                TimeSeriesPlot.Plot.ShowLegend();
+            }
 
-                // 向 DataLogger 添加点（X为计数或时间，Y为强度）
-                _dataLogger.Add(_timeCounter++, currentIntensity);
+            _dataLoggers[pt.ElementName].Add(pt.Time, pt.Intensity);
+            
+            // 为了避免频繁触发全局重绘导致卡顿，我们让 ScottPlot 自己管理范围
+            if (_dataLoggers.Count > 0)
+            {
                 TimeSeriesPlot.Plot.Axes.AutoScale();
                 TimeSeriesPlot.Refresh();
-
-                // 同时将数据反馈给 ViewModel 缓冲区，用于计算峰高
-                vm.AddDataToScan(currentIntensity);
             }
         }
     }
