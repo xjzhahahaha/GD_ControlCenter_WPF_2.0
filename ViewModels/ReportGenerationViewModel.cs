@@ -7,8 +7,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Controls;
+using System.Windows.Media.Imaging;
+using ScottPlot;
+using System.Drawing; // Because ImageFormat might be from System.Drawing.Imaging or ScottPlot
+using System.IO;
+using System;
 
 namespace GD_ControlCenter_WPF.ViewModels
 {
@@ -17,6 +22,7 @@ namespace GD_ControlCenter_WPF.ViewModels
         public string ElementName { get; set; } = string.Empty;
         public string Equation { get; set; } = string.Empty;
         public string R2 { get; set; } = string.Empty;
+        public BitmapImage? GraphImage { get; set; }
     }
 
     public class ReportSampleRow
@@ -37,6 +43,7 @@ namespace GD_ControlCenter_WPF.ViewModels
 
         [ObservableProperty] private string _operatorName = "管理员";
         [ObservableProperty] private string _reportNote = "";
+        [ObservableProperty] private string _reportTitle = "实验分析报告";
 
         [ObservableProperty] private bool _includeCalibrationCurves = true;
         [ObservableProperty] private bool _includeStandardData = false;
@@ -49,6 +56,11 @@ namespace GD_ControlCenter_WPF.ViewModels
         // 供 UI 绑定用于动态生成的集合
         [ObservableProperty] private ObservableCollection<ReportCalibrationRow> _calibrationData = new();
         [ObservableProperty] private ObservableCollection<ReportSampleRow> _sampleData = new();
+        
+        [ObservableProperty] private BitmapImage? _flowInjectionGraph;
+        public bool HasFlowInjectionGraph => FlowInjectionGraph != null;
+
+        private Dictionary<string, List<PlotPoint>>? _latestFlowInjectionData;
 
         // 用于将后台生成的 FlowDocument 传给 View（因为 View 需要将它喂给 DocumentViewer 或进行 Print）
         public Action<FlowDocument>? OnPreviewReady;
@@ -62,6 +74,29 @@ namespace GD_ControlCenter_WPF.ViewModels
                 // 数据发生变化时，自动刷新数据
                 GenerateReportData();
             });
+
+            WeakReferenceMessenger.Default.Register<FlowInjectionDataExportMessage>(this, (r, m) =>
+            {
+                _latestFlowInjectionData = m.Value;
+                GenerateReportData();
+            });
+        }
+
+        private BitmapImage LoadImageFromBytes(byte[] imageData)
+        {
+            var image = new BitmapImage();
+            using (var mem = new System.IO.MemoryStream(imageData))
+            {
+                mem.Position = 0;
+                image.BeginInit();
+                image.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.UriSource = null;
+                image.StreamSource = mem;
+                image.EndInit();
+            }
+            image.Freeze(); // 允许跨线程绑定
+            return image;
         }
 
         private void GenerateReportData()
@@ -115,11 +150,36 @@ namespace GD_ControlCenter_WPF.ViewModels
 
                         elementEquations[element] = (slope, intercept);
 
+                        // --- 使用 ScottPlot 在后台渲染校准曲线图 ---
+                        var plt = new ScottPlot.Plot();
+                        plt.XLabel("浓度");
+                        plt.YLabel("强度");
+                        plt.Title($"{element} 校准曲线");
+                        
+                        var xs = standardPoints.Select(p => p.Conc).ToArray();
+                        var ys = standardPoints.Select(p => p.Intensity).ToArray();
+                        plt.Add.Scatter(xs, ys);
+                        
+                        // 画拟合线
+                        double minX = xs.Min();
+                        double maxX = xs.Max();
+                        // 稍微延伸一点
+                        double padX = (maxX - minX) * 0.1;
+                        if (padX == 0) padX = 1;
+                        var lineXs = new double[] { minX - padX, maxX + padX };
+                        var lineYs = lineXs.Select(x => slope * x + intercept).ToArray();
+                        var line = plt.Add.ScatterLine(lineXs, lineYs);
+                        // line.LineStyle.Pattern = LinePattern.Dashes; // Remove to fix CS0117
+
+                        byte[] imgBytes = plt.GetImageBytes(300, 200, ImageFormat.Png);
+                        var graphImg = LoadImageFromBytes(imgBytes);
+
                         CalibrationData.Add(new ReportCalibrationRow
                         {
                             ElementName = element,
                             Equation = $"y = {slope:F4}x + ({intercept:F4})",
-                            R2 = r2.ToString("F4")
+                            R2 = r2.ToString("F4"),
+                            GraphImage = graphImg
                         });
                     }
                     else
@@ -166,6 +226,35 @@ namespace GD_ControlCenter_WPF.ViewModels
             {
                 SampleData.Add(row);
             }
+
+            // 4. 渲染流动注射时序总图
+            if (_latestFlowInjectionData != null && _latestFlowInjectionData.Count > 0)
+            {
+                var plt = new ScottPlot.Plot();
+                plt.XLabel("时间 (s)");
+                plt.YLabel("绝对发光强度");
+                plt.Title("流动注射全程时序曲线");
+                
+                // 为了显示图例
+                plt.ShowLegend();
+
+                foreach (var kvp in _latestFlowInjectionData)
+                {
+                    if (kvp.Value.Count < 2) continue;
+                    var xs = kvp.Value.Select(p => p.Time).ToArray();
+                    var ys = kvp.Value.Select(p => p.Intensity).ToArray();
+                    var sp = plt.Add.ScatterLine(xs, ys);
+                    sp.LegendText = kvp.Key;
+                }
+
+                byte[] imgBytes = plt.GetImageBytes(600, 300, ImageFormat.Png);
+                FlowInjectionGraph = LoadImageFromBytes(imgBytes);
+            }
+            else
+            {
+                FlowInjectionGraph = null;
+            }
+            OnPropertyChanged(nameof(HasFlowInjectionGraph));
         }
 
         [RelayCommand]

@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Messaging;
+using CommunityToolkit.Mvvm.Messaging;
 using GD_ControlCenter_WPF.Models.Messages;
 using System.Collections.Concurrent;
 using System.IO.Ports;
@@ -161,8 +161,8 @@ namespace GD_ControlCenter_WPF.Services
                     }
                     catch { /* 忽略 IO 释放过程中的异常 */ }
                 });
-
-                closeTask.Wait(TimeSpan.FromMilliseconds(500));
+                
+                // 彻底移除阻塞，改为真正的后台“触发即忘” (Fire and Forget)
             }
 
             // 清理所有积压的指令，防止重连后发送过期的“僵尸”指令

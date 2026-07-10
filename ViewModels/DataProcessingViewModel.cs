@@ -112,7 +112,30 @@ namespace GD_ControlCenter_WPF.ViewModels
             // 监听：接收来自测量模块或导入的实验全量数据包
             WeakReferenceMessenger.Default.Register<SampleSequenceChangedMessage>(this, (r, m) => {
                 _rawFullSequence = m.Value;
-                UpdateFilteredData();
+                
+                // 自动从数据源中提取元素名单，防止因为生命周期导致没接收到配置消息而空白
+                Application.Current.Dispatcher.Invoke(() => {
+                    var els = _rawFullSequence.SelectMany(s => s.ElementConcentrations).Select(e => e.ElementName).Distinct().ToList();
+                    
+                    bool changed = false;
+                    foreach (var el in els)
+                    {
+                        if (!ActiveElements.Contains(el))
+                        {
+                            ActiveElements.Add(el);
+                            changed = true;
+                        }
+                    }
+
+                    if (ActiveElements.Count > 0 && (string.IsNullOrEmpty(SelectedElement) || !ActiveElements.Contains(SelectedElement)))
+                    {
+                        SelectedElement = ActiveElements[0];
+                    }
+                    else if (!changed)
+                    {
+                        UpdateFilteredData();
+                    }
+                });
             });
         }
 
@@ -271,8 +294,19 @@ namespace GD_ControlCenter_WPF.ViewModels
             }
         }
 
-        [RelayCommand] private void ExportData() => MessageBox.Show("功能开发中：导出结果报表...");
-        [RelayCommand] private void GenerateReport() => MessageBox.Show("功能开发中：生成分析报告...");
+        [RelayCommand] 
+        private void ExportData() => MessageBox.Show("功能开发中：导出结果报表...");
+
+        [RelayCommand] 
+        private void GenerateReport() 
+        {
+            if (_rawFullSequence != null && _rawFullSequence.Count > 0)
+            {
+                // 强制广播一次最新数据，确保报告页面拿到最新快照
+                WeakReferenceMessenger.Default.Send(new SampleSequenceChangedMessage(_rawFullSequence));
+            }
+            WeakReferenceMessenger.Default.Send(new NavigateMessage("ReportGeneration"));
+        }
 
         #endregion
     }

@@ -1,4 +1,4 @@
-﻿using GD_ControlCenter_WPF.Models.Spectrometer;
+using GD_ControlCenter_WPF.Models.Spectrometer;
 
 /*
  * 文件名: SpectrometerLogic.cs
@@ -151,8 +151,11 @@ namespace GD_ControlCenter_WPF.Services.Spectrometer.Logic
         public static bool CheckSaturation(SpectralData data)
         {
             if (data?.Intensities == null || data.Intensities.Length == 0) return false;
-            // 使用 Any 快速查找过曝点
-            return data.Intensities.Any(i => i > 65000);
+            for (int i = 0; i < data.Intensities.Length; i++)
+            {
+                if (data.Intensities[i] > 65000) return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -164,8 +167,16 @@ namespace GD_ControlCenter_WPF.Services.Spectrometer.Logic
         {
             if (data?.Intensities == null || data.Intensities.Length == 0) return (0, 0);
 
-            double maxIntensity = data.Intensities.Max();
-            int index = Array.IndexOf(data.Intensities, maxIntensity);
+            double maxIntensity = -1;
+            int index = 0;
+            for (int i = 0; i < data.Intensities.Length; i++)
+            {
+                if (data.Intensities[i] > maxIntensity)
+                {
+                    maxIntensity = data.Intensities[i];
+                    index = i;
+                }
+            }
             double wavelength = data.Wavelengths[index];
 
             return (wavelength, maxIntensity);

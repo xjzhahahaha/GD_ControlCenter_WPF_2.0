@@ -283,6 +283,10 @@ namespace GD_ControlCenter_WPF.ViewModels
             
             // 向外广播最新数据（与数据处理模块互通）
             WeakReferenceMessenger.Default.Send(new SampleSequenceChangedMessage(MeasurementSequence.ToList()));
+            
+            // 广播最完整的时序曲线给报告模块画图用
+            WeakReferenceMessenger.Default.Send(new FlowInjectionDataExportMessage(_scanBuffers));
+
             CollectionProgressText = $"第 {currentRepIndex} 次注射记录完成！等待下一次扫描或切至下一瓶。";
         }
 

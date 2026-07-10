@@ -111,4 +111,14 @@ namespace GD_ControlCenter_WPF.Models.Messages
         {
         }
     }
+
+    /// <summary>
+    /// 用于向报告模块共享最新的完整流动注射时序数据。
+    /// </summary>
+    public class FlowInjectionDataExportMessage : ValueChangedMessage<Dictionary<string, List<PlotPoint>>>
+    {
+        public FlowInjectionDataExportMessage(Dictionary<string, List<PlotPoint>> value) : base(value)
+        {
+        }
+    }
 }

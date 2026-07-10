@@ -1,4 +1,4 @@
-﻿using C_Sharp_Application; 
+using C_Sharp_Application; 
 using CommunityToolkit.Mvvm.ComponentModel;
 using GD_ControlCenter_WPF.Models.Spectrometer;
 using System.Runtime.InteropServices;
@@ -351,8 +351,11 @@ namespace GD_ControlCenter_WPF.Services.Spectrometer
                     // 根据传感器有效像素边界进行裁剪 (防止读取末尾的无效内存位 0 )
                     int validLength = Config.StopPixel + 1;
 
-                    double[] validWavelengths = wavelengths.Value.Take(validLength).ToArray();
-                    double[] validIntensities = intensities.Value.Take(validLength).ToArray();
+                    double[] validWavelengths = new double[validLength];
+                    double[] validIntensities = new double[validLength];
+
+                    Array.Copy(wavelengths.Value, validWavelengths, validLength);
+                    Array.Copy(intensities.Value, validIntensities, validLength);
 
                     // 实例化 DTO 实体返回
                     return new SpectralData(validWavelengths, validIntensities, Config.SerialNumber);

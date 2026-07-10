@@ -40,7 +40,8 @@
             <materialDesign:Card Grid.Row="1" Margin="0,4,0,8" UniformCornerRadius="8" materialDesign:ElevationAssist.Elevation="Dp2">
                 <StackPanel Margin="16,12">
                     <TextBlock Text="实验信息登记" Style="{StaticResource MaterialDesignSubtitle2TextBlock}" Opacity="0.6" Margin="0,0,0,12"/>
-                    <TextBox Text="{Binding OperatorName}" materialDesign:HintAssist.Hint="检测人 / Operator" Style="{StaticResource MaterialDesignFloatingHintTextBox}" Margin="0,0,0,12"/>
+                    <TextBox Text="{Binding ReportTitle, UpdateSourceTrigger=PropertyChanged}" materialDesign:HintAssist.Hint="报告名称 / Report Title" Style="{StaticResource MaterialDesignFloatingHintTextBox}" Margin="0,0,0,12"/>
+                    <TextBox Text="{Binding OperatorName, UpdateSourceTrigger=PropertyChanged}" materialDesign:HintAssist.Hint="检测人 / Operator" Style="{StaticResource MaterialDesignFloatingHintTextBox}" Margin="0,0,0,12"/>
                     <TextBox Text="{Binding ReportNote}" materialDesign:HintAssist.Hint="实验备注" AcceptsReturn="True" TextWrapping="Wrap" Height="80" 
                              Style="{StaticResource MaterialDesignOutlinedTextBox}" VerticalContentAlignment="Top"/>
                 </StackPanel>
@@ -80,7 +81,7 @@
                     <FlowDocument x:Name="ReportDocument" PagePadding="40" FontFamily="Microsoft YaHei" Background="White">
                         <!-- 报告抬头 -->
                         <Paragraph TextAlignment="Center" FontSize="26" FontWeight="Bold" Margin="0,0,0,20">
-                            无极性发光光谱 (GD-OES) 实验分析报告
+                            <Run Text="{Binding ReportTitle}"/>
                         </Paragraph>
 
                         <Paragraph TextAlignment="Right" FontSize="12" Foreground="Gray" Margin="0,0,0,20">
@@ -99,17 +100,24 @@
                             <Run Text="备注描述：" FontWeight="Bold"/> <Run Text="{Binding ReportNote}"/>
                         </Paragraph>
 
-                        <!-- 校准曲线汇总 (通过 BlockUIContainer 嵌入 DataGrid) -->
+                        <!-- 校准曲线图表汇总 (ItemsControl 呈现多张图) -->
                         <BlockUIContainer>
                             <StackPanel Visibility="{Binding IncludeCalibrationCurves, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <TextBlock Text="二、 校准曲线方程汇总" FontSize="16" FontWeight="Bold" Background="#EEE" Padding="5" Margin="0,20,0,10"/>
-                                <DataGrid ItemsSource="{Binding CalibrationData}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" Background="White" BorderBrush="#CCC" BorderThickness="1">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="元素名称" Binding="{Binding ElementName}" Width="150"/>
-                                        <DataGridTextColumn Header="拟合方程 (Linear)" Binding="{Binding Equation}" Width="300"/>
-                                        <DataGridTextColumn Header="决定系数 R²" Binding="{Binding R2}" Width="150"/>
-                                    </DataGrid.Columns>
-                                </DataGrid>
+                                <TextBlock Text="二、 校准曲线图表与方程" FontSize="16" FontWeight="Bold" Background="#EEE" Padding="5" Margin="0,20,0,10"/>
+                                <ItemsControl ItemsSource="{Binding CalibrationData}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                                <Image Source="{Binding GraphImage}" Width="300" Height="200" Margin="0,0,20,0"/>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ElementName, StringFormat='元素通道：{0}'}" FontSize="14" FontWeight="Bold" Margin="0,0,0,10"/>
+                                                    <TextBlock Text="{Binding Equation, StringFormat='拟合方程：{0}'}" Margin="0,0,0,5"/>
+                                                    <TextBlock Text="{Binding R2, StringFormat='R² 值：{0}'}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </BlockUIContainer>
 
@@ -126,6 +134,14 @@
                                         <DataGridTextColumn Header="计算浓度" Binding="{Binding CalculatedConc}" Width="120" FontWeight="Bold"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
+                            </StackPanel>
+                        </BlockUIContainer>
+
+                        <!-- 流动注射时序总图 -->
+                        <BlockUIContainer>
+                            <StackPanel Visibility="{Binding HasFlowInjectionGraph, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="四、 流动注射全程时序曲线追踪" FontSize="16" FontWeight="Bold" Background="#EEE" Padding="5" Margin="0,20,0,10"/>
+                                <Image Source="{Binding FlowInjectionGraph}" Width="700" Height="350" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </BlockUIContainer>
 

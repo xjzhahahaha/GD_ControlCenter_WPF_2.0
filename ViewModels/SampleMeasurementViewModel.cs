@@ -366,8 +366,7 @@ namespace GD_ControlCenter_WPF.ViewModels
 
                         if (!IsCollecting) break;
 
-                        // 计算 10 幅图的均值作为第 r 次测试的强度值（随机抓取最多 10 幅全谱图）
-                        var random = new Random();
+                        // --- 核心：剔除异常值算法 (IQR 算法) 与均值计算 ---
                         foreach (var conf in group)
                         {
                             string key = $"{conf.ElementName}({conf.Wavelength})";
@@ -379,11 +378,30 @@ namespace GD_ControlCenter_WPF.ViewModels
                                 var list = runFramesBuffer[key];
                                 if (list.Count > 0)
                                 {
-                                    var sampledList = list.Count >= 10 
-                                        ? list.OrderBy(x => random.Next()).Take(10).ToList() 
-                                        : list.ToList();
-                                    
-                                    targetRow.Reps[r].Intensity = Math.Round(sampledList.Average(), 2);
+                                    // 1. 数据量极少时，直接取平均
+                                    if (list.Count <= 3)
+                                    {
+                                        targetRow.Reps[r].Intensity = Math.Round(list.Average(), 2);
+                                    }
+                                    else
+                                    {
+                                        // 2. 使用四分位距 (IQR) 算法动态剔除异常跳点 (例如气泡或火花导致的突变)
+                                        var sortedList = list.OrderBy(x => x).ToList();
+                                        double q1 = sortedList[sortedList.Count / 4];
+                                        double q3 = sortedList[sortedList.Count * 3 / 4];
+                                        double iqr = q3 - q1;
+                                        
+                                        // IQR 乘数，1.5 是统计学标准，表示温和剔除；可调大以放松过滤
+                                        double lowerBound = q1 - 1.5 * iqr;
+                                        double upperBound = q3 + 1.5 * iqr;
+
+                                        var validData = sortedList.Where(x => x >= lowerBound && x <= upperBound).ToList();
+                                        
+                                        // 防止全被剔除的极端情况兜底
+                                        if (validData.Count == 0) validData = sortedList;
+
+                                        targetRow.Reps[r].Intensity = Math.Round(validData.Average(), 2);
+                                    }
                                 }
                             }
                         }
