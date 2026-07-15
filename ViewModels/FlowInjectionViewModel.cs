@@ -26,8 +26,10 @@ namespace GD_ControlCenter_WPF.ViewModels
         
         [ObservableProperty] private string _collectionProgressText = "就绪 - 等待启动采集";
 
-        // 历史扫描记录表
+        // 历史扫描记录 (UI 绑定)
         [ObservableProperty] private ObservableCollection<FlowInjectionResultData> _scanRecords = new();
+        // 用于缓存每个样品的流注记录，使得切换样品时数据不丢失
+        private readonly Dictionary<SampleItemModel, ObservableCollection<FlowInjectionResultData>> _scanRecordsCache = new();
 
         [ObservableProperty] private ObservableCollection<string> _pickedElements = new();
 
@@ -51,6 +53,21 @@ namespace GD_ControlCenter_WPF.ViewModels
             // 初始化 PickedElements，供 View 层分配颜色
             _elementConfigVM.SelectedConfigs.CollectionChanged += (s, e) => UpdatePickedElements();
             UpdatePickedElements();
+        }
+
+        partial void OnCurrentSampleChanged(SampleItemModel? oldValue, SampleItemModel? newValue)
+        {
+            if (newValue != null)
+            {
+                if (!_scanRecordsCache.ContainsKey(newValue))
+                {
+                    _scanRecordsCache[newValue] = new ObservableCollection<FlowInjectionResultData>();
+                }
+                ScanRecords = _scanRecordsCache[newValue];
+                
+                // 切换样品时，自动通知清空图表（因为时序图是实时流，不跨样品保存）
+                WeakReferenceMessenger.Default.Send(new SwitchPlotElementMessage("CLEAR_ALL"));
+            }
         }
 
         private void UpdatePickedElements()
@@ -196,7 +213,7 @@ namespace GD_ControlCenter_WPF.ViewModels
                 if (ec.Reps == null) ec.Reps = new ObservableCollection<MeasurementRepModel>();
             }
 
-            int currentRepIndex = (CurrentSample.ElementConcentrations.FirstOrDefault()?.Reps.Count ?? 0) + 1;
+            int currentRepIndex = (CurrentSample.ElementConcentrations.Max(e => (int?)e.Reps.Count) ?? 0) + 1;
             
             foreach (var conf in _elementConfigVM.SelectedConfigs)
             {
@@ -262,7 +279,8 @@ namespace GD_ControlCenter_WPF.ViewModels
                 // 必须在 UI 线程操作 ObservableCollection
                 Application.Current.Dispatcher.Invoke(() => ScanRecords.Add(resultData));
 
-                // --- 将 PeakArea 存入 CurrentSample 的浓度模型中作为主流测量值 ---
+                // --- 将 PeakIntensity (峰高) 存入 CurrentSample 的浓度模型中作为主流测量值 ---
+                // 注：当出现平顶峰（稳态）时，使用峰高代表浓度比面积更准确
                 var targetRow = CurrentSample.ElementConcentrations.FirstOrDefault(e => e.ElementName == key || e.ElementName == conf.ElementName);
                 if (targetRow != null)
                 {
@@ -271,7 +289,7 @@ namespace GD_ControlCenter_WPF.ViewModels
                         targetRow.Reps.Add(new MeasurementRepModel 
                         { 
                             RepIndex = currentRepIndex, 
-                            Intensity = Math.Round(peakArea, 2), 
+                            Intensity = Math.Round(exactPeakHeight, 2), 
                             IsMeasuring = false 
                         });
                     });
@@ -324,7 +342,6 @@ namespace GD_ControlCenter_WPF.ViewModels
             // 自动保存至 JSON 磁盘
             _configService.SaveResults(MeasurementSequence.ToList());
             
-            ScanRecords.Clear(); 
             CollectionProgressText = "就绪 - 等待启动采集";
 
             int currentIndex = MeasurementSequence.IndexOf(CurrentSample);
@@ -334,7 +351,47 @@ namespace GD_ControlCenter_WPF.ViewModels
             }
             else
             {
-                MessageBox.Show("全序列流动注射测量完成！数据已同步至数据处理模块。", "任务结束", MessageBoxButton.OK, MessageBoxImage.Information);
+                CollectionProgressText = "全部样品测量完毕！请点击【实验结束并处理数据】。";
+            }
+        }
+
+        [RelayCommand]
+        private void FinishExperimentAndNavigate()
+        {
+            MessageBox.Show("实验已结束，正在为您跳转至数据处理界面！", "实验结束", MessageBoxButton.OK, MessageBoxImage.Information);
+            WeakReferenceMessenger.Default.Send(new NavigateMessage("DataProcessing"));
+        }
+
+        [RelayCommand]
+        private void ClearCurrentSampleData()
+        {
+            if (CurrentSample == null)
+            {
+                MessageBox.Show("请先选择要清空数据的样品！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            if (IsScanning)
+            {
+                MessageBox.Show("正在扫描中，请先停止扫描后再清空！", "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var result = MessageBox.Show($"确定要清空样品【{CurrentSample.SampleName}】的全部测量数据吗？\n清空后该样品将恢复为“等待”状态，且所有流注分析记录将被删除。", "清空确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                CurrentSample.Status = "等待";
+                ScanRecords.Clear(); // 清空下面板的分析记录
+                foreach (var ec in CurrentSample.ElementConcentrations)
+                {
+                    ec.MeasuredIntensity = 0;
+                    ec.MeasuredRsd = 0;
+                    ec.Reps.Clear();
+                }
+                
+                // 广播更新
+                WeakReferenceMessenger.Default.Send(new SampleSequenceChangedMessage(MeasurementSequence.ToList()));
+                
+                MessageBox.Show("该样品的测量数据已成功清空！您可以随时重新开始扫描。", "已清空", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
     }

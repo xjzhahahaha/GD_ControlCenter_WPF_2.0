@@ -104,8 +104,8 @@
             <materialDesign:Card Margin="5" UniformCornerRadius="8"
                                  Background="{DynamicResource PrimaryHueMidBrush}" Foreground="White">
                 <StackPanel Margin="15">
-                    <TextBlock Text="{Binding CurrentSample.SampleName, FallbackValue='未选择'}" FontSize="24" FontWeight="Bold"/>
-                    <TextBlock Text="{Binding CurrentSample.Type}" FontSize="14" Opacity="0.8"/>
+                    <TextBlock Text="{Binding CurrentSample.SampleName, FallbackValue='未选择'}" FontSize="20" FontWeight="Bold" TextTrimming="CharacterEllipsis" ToolTip="{Binding CurrentSample.SampleName}"/>
+                    <TextBlock Text="{Binding CurrentSample.Type}" FontSize="12" Opacity="0.8"/>
                 </StackPanel>
             </materialDesign:Card>
 
@@ -124,7 +124,7 @@
                         <ComboBox ItemsSource="{Binding CurrentSample.ElementConcentrations}"
                                   SelectedItem="{Binding SelectedPreviewElement}"
                                   DisplayMemberPath="ElementName"
-                                  Width="130" VerticalAlignment="Center" FontSize="14" FontWeight="Bold"/>
+                                  Width="120" VerticalAlignment="Center" FontSize="12" FontWeight="Bold"/>
                     </StackPanel>
 
                     <!-- 2. 中置列表：标准 WPF ListBox，保障系统稳定与最大化流畅度 -->
@@ -141,12 +141,12 @@
                                     </Grid.ColumnDefinitions>
 
                                     <!-- 测量次序 -->
-                                    <TextBlock Text="{Binding RepIndex}" VerticalAlignment="Center" FontSize="14" Foreground="#333333"/>
+                                    <TextBlock Text="{Binding RepIndex}" VerticalAlignment="Center" FontSize="12" Foreground="#333333"/>
 
                                     <!-- 实测结果状态响应 -->
                                     <Grid Grid.Column="1">
                                         <!-- 未采集状态 -->
-                                        <TextBlock Text="--" FontSize="14" Foreground="#999999" FontWeight="Bold">
+                                        <TextBlock Text="--" FontSize="12" Foreground="#999999" FontWeight="Bold">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -164,7 +164,7 @@
                                         </TextBlock>
 
                                         <!-- 采集中状态提示 -->
-                                        <TextBlock Text="采集中..." FontSize="14" Foreground="#673ab7" FontWeight="Bold">
+                                        <TextBlock Text="采集中..." FontSize="12" Foreground="#673ab7" FontWeight="Bold">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -178,7 +178,7 @@
                                         </TextBlock>
 
                                         <!-- 数据读取完毕展示数值 -->
-                                        <TextBlock Text="{Binding Intensity, StringFormat={}{0:F2}}" FontSize="14" Foreground="#333333" FontWeight="Bold">
+                                        <TextBlock Text="{Binding Intensity, StringFormat={}{0:F2}}" FontSize="12" Foreground="#333333" FontWeight="Bold">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Visibility" Value="Visible"/>
@@ -206,12 +206,12 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                            <TextBlock Text="平均强度: " FontSize="14" Foreground="#555555"/>
-                            <TextBlock Text="{Binding SelectedPreviewElement.MeasuredIntensity, StringFormat={}{0:F2}, FallbackValue='0.00'}" FontSize="14" FontWeight="Bold" Foreground="#333333"/>
+                            <TextBlock Text="平均强度: " FontSize="12" Foreground="#555555"/>
+                            <TextBlock Text="{Binding SelectedPreviewElement.MeasuredIntensity, StringFormat={}{0:F2}, FallbackValue='0.00'}" FontSize="12" FontWeight="Bold" Foreground="#333333"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <TextBlock Text="RSD: " FontSize="14" Foreground="#555555"/>
-                            <TextBlock Text="{Binding SelectedPreviewElement.MeasuredRsd, StringFormat={}{0:F2}%, FallbackValue='0.00%'}" FontSize="14" FontWeight="Bold" Foreground="#673ab7"/>
+                            <TextBlock Text="RSD: " FontSize="12" Foreground="#555555"/>
+                            <TextBlock Text="{Binding SelectedPreviewElement.MeasuredRsd, StringFormat={}{0:F2}%, FallbackValue='0.00%'}" FontSize="12" FontWeight="Bold" Foreground="#673ab7"/>
                         </StackPanel>
                     </Grid>
                 </Grid>
@@ -267,12 +267,32 @@
                         </Button.Style>
                     </Button>
 
-                    <!-- 2. 【新增】：导出数据按钮 -->
+                    <!-- 2. 清空当前样品数据按钮 -->
+                    <Button Content="清空本样品测量数据"
+                            Command="{Binding ClearCurrentSampleDataCommand}"
+                            Style="{StaticResource MaterialDesignOutlinedButton}"
+                            Foreground="IndianRed"
+                            BorderBrush="IndianRed"
+                            Margin="0,10,0,0"
+                            Height="40"
+                            ToolTip="如果误触或需要重测，点击清空当前选中样品的全部数据"/>
+
+                    <!-- 3. 实验结束与数据处理按钮 -->
+                    <Button Content="实验结束并处理数据"
+                            Command="{Binding FinishExperimentAndNavigateCommand}"
+                            Style="{StaticResource MaterialDesignRaisedButton}"
+                            Background="#4caf50"
+                            BorderBrush="#4caf50"
+                            Margin="0,10,0,0"
+                            Height="45"
+                            ToolTip="结束全部样品的测试，并自动跳转至数据处理界面"/>
+
+                    <!-- 4. 导出数据按钮 -->
                     <Button Content="导出实验快照"
                             Command="{Binding ExportCurrentSessionCommand}"
                             Style="{StaticResource MaterialDesignOutlinedButton}"
                             Margin="0,10,0,0"
-                            Height="45"
+                            Height="40"
                             ToolTip="将本次实验的所有测量结果保存为 JSON 文件"/>
                     <TextBlock Text="* 导出数据可用于后续脱机处理"
                                HorizontalAlignment="Center"

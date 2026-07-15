@@ -445,8 +445,7 @@ namespace GD_ControlCenter_WPF.ViewModels
                     }
                     else
                     {
-                        CollectionProgressText = "全序列任务结束。";
-                        MessageBox.Show("列表中的所有样品已全部测定完毕！\n数据已自动同步至数据处理界面。", "测试成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                        CollectionProgressText = "全部样品测量完毕！请点击【实验结束并处理数据】。";
                     }
                 }
             }
@@ -456,6 +455,13 @@ namespace GD_ControlCenter_WPF.ViewModels
                 IsCollecting = false;
                 _currentRunFrameBuffer.Clear();
             }
+        }
+
+        [RelayCommand]
+        private void FinishExperimentAndNavigate()
+        {
+            MessageBox.Show("实验已结束，正在为您跳转至数据处理界面！", "实验结束", MessageBoxButton.OK, MessageBoxImage.Information);
+            WeakReferenceMessenger.Default.Send(new NavigateMessage("DataProcessing"));
         }
 
         private void UpdateSelectedPreviewSummary()
@@ -562,6 +568,39 @@ namespace GD_ControlCenter_WPF.ViewModels
                 CollectionProgressText = "自动测量已被强行终止";
                 if (CurrentSample != null) CurrentSample.Status = "手动中止";
                 _currentRunFrameBuffer.Clear();
+            }
+        }
+
+        [RelayCommand]
+        private void ClearCurrentSampleData()
+        {
+            if (CurrentSample == null)
+            {
+                MessageBox.Show("请先选择要清空数据的样品！", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            if (IsCollecting)
+            {
+                MessageBox.Show("正在采集中，请先停止采集后再清空！", "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var result = MessageBox.Show($"确定要清空样品【{CurrentSample.SampleName}】的全部测量数据吗？\n清空后该样品将恢复为“等待”状态。", "清空确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                CurrentSample.Status = "等待";
+                foreach (var ec in CurrentSample.ElementConcentrations)
+                {
+                    ec.MeasuredIntensity = 0;
+                    ec.MeasuredRsd = 0;
+                    foreach (var rep in ec.Reps)
+                    {
+                        rep.Intensity = null;
+                        rep.IsMeasuring = false;
+                    }
+                }
+                UpdateSelectedPreviewSummary();
+                MessageBox.Show("该样品的测量数据已成功清空！您可以随时重新开始采集。", "已清空", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
