@@ -26,16 +26,16 @@ namespace GD_ControlCenter_WPF.ViewModels
         
         [ObservableProperty] private string _collectionProgressText = "就绪 - 等待启动采集";
 
-        // 历史扫描记录 (UI 绑定)
-        [ObservableProperty] private ObservableCollection<FlowInjectionResultData> _scanRecords = new();
-        // 用于缓存每个样品的流注记录，使得切换样品时数据不丢失
-        private readonly Dictionary<SampleItemModel, ObservableCollection<FlowInjectionResultData>> _scanRecordsCache = new();
+
 
         [ObservableProperty] private ObservableCollection<string> _pickedElements = new();
 
         // 核心缓冲区：记录本次扫描的各元素时间序列，Key: "Element(Wavelength)"
-        private readonly Dictionary<string, List<PlotPoint>> _scanBuffers = new();
+        private Dictionary<string, List<PlotPoint>> _scanBuffers = new();
+        // 缓存每个样品的完整时序图数据
+        private readonly Dictionary<SampleItemModel, Dictionary<string, List<PlotPoint>>> _plotCache = new();
         private DateTime _scanStartTime;
+        private int _currentScanPointStartIndex = 0;
 
         public FlowInjectionViewModel(JsonConfigService configService, ElementConfigViewModel elementConfigVM)
         {
@@ -59,14 +59,14 @@ namespace GD_ControlCenter_WPF.ViewModels
         {
             if (newValue != null)
             {
-                if (!_scanRecordsCache.ContainsKey(newValue))
+                if (!_plotCache.ContainsKey(newValue))
                 {
-                    _scanRecordsCache[newValue] = new ObservableCollection<FlowInjectionResultData>();
+                    _plotCache[newValue] = new Dictionary<string, List<PlotPoint>>();
                 }
-                ScanRecords = _scanRecordsCache[newValue];
+                _scanBuffers = _plotCache[newValue];
                 
-                // 切换样品时，自动通知清空图表（因为时序图是实时流，不跨样品保存）
-                WeakReferenceMessenger.Default.Send(new SwitchPlotElementMessage("CLEAR_ALL"));
+                // 切换样品时，批量渲染该样品历史时序图
+                WeakReferenceMessenger.Default.Send(new FlowInjectionPlotBatchMessage(_scanBuffers));
             }
         }
 
@@ -129,13 +129,14 @@ namespace GD_ControlCenter_WPF.ViewModels
                 return;
             }
 
-            // 清理缓冲区并通知 View 准备新画板
-            _scanBuffers.Clear();
+            // 不再清理整个缓冲区，而是保留历史记录以拼接
             foreach (var el in PickedElements)
             {
-                _scanBuffers[el] = new List<PlotPoint>();
+                if (!_scanBuffers.ContainsKey(el))
+                {
+                    _scanBuffers[el] = new List<PlotPoint>();
+                }
             }
-            WeakReferenceMessenger.Default.Send(new SwitchPlotElementMessage("CLEAR_ALL"));
 
             IsScanning = true;
             CurrentSample.Status = "正在扫描...";
@@ -157,9 +158,19 @@ namespace GD_ControlCenter_WPF.ViewModels
 
                 // 硬件稳定延时
                 await Task.Delay(3 * firstConfig.IntegrationTime * firstConfig.AveragingCount);
-                CollectionProgressText = "硬件已就绪，正在进行流动注射时序采样，请注射溶液...";
+
+                // 记录本次注射的数据起始索引，用于后续只分析最新数据
+                _currentScanPointStartIndex = _scanBuffers.Values.FirstOrDefault()?.Count ?? 0;
+
+                // 为了让同一样品的多次注射连续拼接到时序图中，计算时间偏移量
+                double timeOffset = 0;
+                if (_currentScanPointStartIndex > 0)
+                {
+                    timeOffset = _scanBuffers.Values.First().Last().Time;
+                }
+                _scanStartTime = DateTime.Now.AddSeconds(-timeOffset);
                 
-                _scanStartTime = DateTime.Now;
+                CollectionProgressText = "硬件已就绪，正在进行流动注射时序采样，请注射溶液...";
 
                 // 核心循环：高频抽取全谱并分离各元素通道
                 while (IsScanning)
@@ -218,17 +229,19 @@ namespace GD_ControlCenter_WPF.ViewModels
             foreach (var conf in _elementConfigVM.SelectedConfigs)
             {
                 string key = $"{conf.ElementName}({conf.Wavelength})";
-                if (!_scanBuffers.ContainsKey(key) || _scanBuffers[key].Count < 3) continue;
+                if (!_scanBuffers.ContainsKey(key)) continue;
 
                 var dataPoints = _scanBuffers[key];
+                var currentPoints = dataPoints.Skip(_currentScanPointStartIndex).ToList();
+                if (currentPoints.Count < 3) continue;
                 
                 // --- 自动寻峰算法 ---
-                // 1. 寻找绝对最大值作为峰顶
-                var maxPoint = dataPoints.OrderByDescending(p => p.Intensity).First();
-                int maxIndex = dataPoints.IndexOf(maxPoint);
+                // 1. 寻找本次注射中的绝对最大值作为峰顶
+                var maxPoint = currentPoints.OrderByDescending(p => p.Intensity).First();
+                int maxIndex = dataPoints.LastIndexOf(maxPoint);
                 
-                // 2. 估计基线水平 (取所有点中最低的 5% 的均值作为基线参考)
-                var sortedIntensities = dataPoints.Select(p => p.Intensity).OrderBy(i => i).ToList();
+                // 2. 估计基线水平 (取本次所有点中最低的 5% 的均值作为基线参考)
+                var sortedIntensities = currentPoints.Select(p => p.Intensity).OrderBy(i => i).ToList();
                 int baselineCount = Math.Max(1, sortedIntensities.Count / 20); 
                 double globalBaseline = sortedIntensities.Take(baselineCount).Average();
 
@@ -236,9 +249,9 @@ namespace GD_ControlCenter_WPF.ViewModels
                 double peakHeightRough = maxPoint.Intensity - globalBaseline;
                 double threshold = globalBaseline + peakHeightRough * 0.05;
 
-                // 4. 从峰顶向左寻找起峰点
+                // 4. 从峰顶向左寻找起峰点（注意不要越界到上一次注射的数据）
                 int startIndex = maxIndex;
-                while (startIndex > 0 && dataPoints[startIndex].Intensity > threshold)
+                while (startIndex > _currentScanPointStartIndex && dataPoints[startIndex].Intensity > threshold)
                 {
                     startIndex--;
                 }
@@ -264,20 +277,7 @@ namespace GD_ControlCenter_WPF.ViewModels
                     peakArea += (y1 + y2) * dt / 2.0;
                 }
 
-                // --- 组装并展示分析结果 ---
-                var resultData = new FlowInjectionResultData
-                {
-                    ScanIndex = currentRepIndex,
-                    ElementName = key,
-                    PeakIntensity = Math.Round(exactPeakHeight, 2),
-                    BackgroundIntensity = Math.Round(localBaseline, 2),
-                    StartTime = Math.Round(dataPoints[startIndex].Time, 2),
-                    EndTime = Math.Round(dataPoints[endIndex].Time, 2),
-                    PeakArea = Math.Round(peakArea, 2)
-                };
-                
-                // 必须在 UI 线程操作 ObservableCollection
-                Application.Current.Dispatcher.Invoke(() => ScanRecords.Add(resultData));
+                // 注意：此处不再维护单次峰值明细 ScanRecords，改为由 ElementConcentrations 汇总展示
 
                 // --- 将 PeakIntensity (峰高) 存入 CurrentSample 的浓度模型中作为主流测量值 ---
                 // 注：当出现平顶峰（稳态）时，使用峰高代表浓度比面积更准确
@@ -302,8 +302,13 @@ namespace GD_ControlCenter_WPF.ViewModels
             // 向外广播最新数据（与数据处理模块互通）
             WeakReferenceMessenger.Default.Send(new SampleSequenceChangedMessage(MeasurementSequence.ToList()));
             
-            // 广播最完整的时序曲线给报告模块画图用
-            WeakReferenceMessenger.Default.Send(new FlowInjectionDataExportMessage(_scanBuffers));
+            // 广播最完整的时序曲线给报告模块画图（包含所有测过的样品）
+            var exportData = new Dictionary<string, Dictionary<string, List<PlotPoint>>>();
+            foreach (var kvp in _plotCache)
+            {
+                exportData[kvp.Key.SampleName] = kvp.Value;
+            }
+            WeakReferenceMessenger.Default.Send(new FlowInjectionDataExportMessage(exportData));
 
             CollectionProgressText = $"第 {currentRepIndex} 次注射记录完成！等待下一次扫描或切至下一瓶。";
         }
@@ -380,7 +385,6 @@ namespace GD_ControlCenter_WPF.ViewModels
             if (result == MessageBoxResult.Yes)
             {
                 CurrentSample.Status = "等待";
-                ScanRecords.Clear(); // 清空下面板的分析记录
                 foreach (var ec in CurrentSample.ElementConcentrations)
                 {
                     ec.MeasuredIntensity = 0;

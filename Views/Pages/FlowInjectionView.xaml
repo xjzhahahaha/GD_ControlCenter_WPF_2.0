@@ -36,7 +36,8 @@
                 <DataGrid Grid.Row="1" ItemsSource="{Binding MeasurementSequence}" 
                           SelectedItem="{Binding CurrentSample}"
                           AutoGenerateColumns="False" IsReadOnly="True" 
-                          SelectionMode="Single" HeadersVisibility="Column">
+                          SelectionMode="Single" HeadersVisibility="Column"
+                          IsEnabled="{Binding IsScanning, Converter={StaticResource InverseBoolConverter}}">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="85">
                             <DataGridTextColumn.ElementStyle>
@@ -117,13 +118,12 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock Text="扫描峰值记录" FontWeight="Bold" Opacity="0.6" Style="{StaticResource MaterialDesignSubtitle2TextBlock}"/>
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding ScanRecords}" FontSize="12"
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding CurrentSample.ElementConcentrations}" FontSize="12"
                               AutoGenerateColumns="False" IsReadOnly="True" Margin="0,10,0,0">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="次序" Binding="{Binding ScanIndex}" Width="50"/>
                             <DataGridTextColumn Header="元素" Binding="{Binding ElementName}" Width="*"/>
-                            <DataGridTextColumn Header="峰面积" Binding="{Binding PeakArea, StringFormat={}{0:F1}}" Width="*"/>
-                            <DataGridTextColumn Header="峰高" Binding="{Binding PeakIntensity, StringFormat={}{0:F1}}" Width="*"/>
+                            <DataGridTextColumn Header="平均峰高" Binding="{Binding MeasuredIntensity, StringFormat={}{0:F2}}" Width="*"/>
+                            <DataGridTextColumn Header="RSD (%)" Binding="{Binding MeasuredRsd, StringFormat={}{0:F2}}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

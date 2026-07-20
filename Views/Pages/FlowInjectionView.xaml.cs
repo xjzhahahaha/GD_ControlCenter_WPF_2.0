@@ -48,6 +48,12 @@ namespace GD_ControlCenter_WPF.Views.Pages
             {
                 Dispatcher.BeginInvoke(() => RenderTimeSeriesPoint(m.Value));
             });
+
+            // 订阅：批量渲染完整时序图 (切换样品时恢复历史图表)
+            WeakReferenceMessenger.Default.Register<FlowInjectionPlotBatchMessage>(this, (r, m) =>
+            {
+                Dispatcher.BeginInvoke(() => RenderTimeSeriesBatch(m.Value));
+            });
         }
 
         private void RenderFullSpectrum(SpectralData data)
@@ -82,6 +88,37 @@ namespace GD_ControlCenter_WPF.Views.Pages
                 TimeSeriesPlot.Plot.Axes.AutoScale();
                 TimeSeriesPlot.Refresh();
             }
+        }
+
+        private void RenderTimeSeriesBatch(Dictionary<string, List<PlotPoint>> plotData)
+        {
+            TimeSeriesPlot.Plot.Clear();
+            _dataLoggers.Clear();
+
+            foreach (var kvp in plotData)
+            {
+                var elementName = kvp.Key;
+                var points = kvp.Value;
+                if (points == null || points.Count == 0) continue;
+
+                var logger = TimeSeriesPlot.Plot.Add.DataLogger();
+                logger.LegendText = elementName;
+                logger.Color = _palette[_dataLoggers.Count % _palette.Length];
+                logger.LineWidth = 2;
+                _dataLoggers[elementName] = logger;
+
+                foreach (var pt in points)
+                {
+                    logger.Add(pt.Time, pt.Intensity);
+                }
+            }
+
+            if (_dataLoggers.Count > 0)
+            {
+                TimeSeriesPlot.Plot.ShowLegend();
+                TimeSeriesPlot.Plot.Axes.AutoScale();
+            }
+            TimeSeriesPlot.Refresh();
         }
     }
 }

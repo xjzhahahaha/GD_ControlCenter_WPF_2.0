@@ -139,9 +139,18 @@
 
                         <!-- 流动注射时序总图 -->
                         <BlockUIContainer>
-                            <StackPanel Visibility="{Binding HasFlowInjectionGraph, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                <TextBlock Text="四、 流动注射全程时序曲线追踪" FontSize="16" FontWeight="Bold" Background="#EEE" Padding="5" Margin="0,20,0,10"/>
-                                <Image Source="{Binding FlowInjectionGraph}" Width="700" Height="350" HorizontalAlignment="Center"/>
+                            <StackPanel Visibility="{Binding HasFlowInjectionGraphs, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="四、流动注射全程时序曲线追踪" FontSize="16" FontWeight="Bold" Background="#EEE" Padding="5" Margin="0,20,0,10"/>
+                                <ItemsControl ItemsSource="{Binding FlowInjectionGraphs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,0,0,30">
+                                                <TextBlock Text="{Binding SampleName, StringFormat='样品名称：{0}'}" FontSize="14" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center"/>
+                                                <Image Source="{Binding GraphImage}" Width="700" Height="350" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </BlockUIContainer>
 

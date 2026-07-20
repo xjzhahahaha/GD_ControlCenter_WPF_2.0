@@ -34,6 +34,12 @@ namespace GD_ControlCenter_WPF.ViewModels
         public string CalculatedConc { get; set; } = string.Empty;
     }
 
+    public class ReportFlowInjectionGraph
+    {
+        public string SampleName { get; set; } = string.Empty;
+        public BitmapImage? GraphImage { get; set; }
+    }
+
     public partial class ReportGenerationViewModel : ObservableObject
     {
         private List<SampleItemModel> _rawFullSequence = new();
@@ -57,10 +63,10 @@ namespace GD_ControlCenter_WPF.ViewModels
         [ObservableProperty] private ObservableCollection<ReportCalibrationRow> _calibrationData = new();
         [ObservableProperty] private ObservableCollection<ReportSampleRow> _sampleData = new();
         
-        [ObservableProperty] private BitmapImage? _flowInjectionGraph;
-        public bool HasFlowInjectionGraph => FlowInjectionGraph != null;
+        [ObservableProperty] private ObservableCollection<ReportFlowInjectionGraph> _flowInjectionGraphs = new();
+        public bool HasFlowInjectionGraphs => FlowInjectionGraphs.Count > 0;
 
-        private Dictionary<string, List<PlotPoint>>? _latestFlowInjectionData;
+        private Dictionary<string, Dictionary<string, List<PlotPoint>>>? _latestFlowInjectionData;
 
         // 用于将后台生成的 FlowDocument 传给 View（因为 View 需要将它喂给 DocumentViewer 或进行 Print）
         public Action<FlowDocument>? OnPreviewReady;
@@ -71,14 +77,13 @@ namespace GD_ControlCenter_WPF.ViewModels
             WeakReferenceMessenger.Default.Register<SampleSequenceChangedMessage>(this, (r, m) =>
             {
                 _rawFullSequence = m.Value;
-                // 数据发生变化时，自动刷新数据
-                GenerateReportData();
+                // 注意：为了防止在连续测量或流动注射时每次出峰都导致严重卡顿，
+                // 这里只接收数据，不自动重绘报告。用户需要手动点击“刷新预览”。
             });
 
             WeakReferenceMessenger.Default.Register<FlowInjectionDataExportMessage>(this, (r, m) =>
             {
                 _latestFlowInjectionData = m.Value;
-                GenerateReportData();
             });
         }
 
@@ -227,34 +232,44 @@ namespace GD_ControlCenter_WPF.ViewModels
                 SampleData.Add(row);
             }
 
-            // 4. 渲染流动注射时序总图
+            // 4. 渲染流动注射时序总图（支持多个样品）
+            FlowInjectionGraphs.Clear();
             if (_latestFlowInjectionData != null && _latestFlowInjectionData.Count > 0)
             {
-                var plt = new ScottPlot.Plot();
-                plt.XLabel("时间 (s)");
-                plt.YLabel("绝对发光强度");
-                plt.Title("流动注射全程时序曲线");
-                
-                // 为了显示图例
-                plt.ShowLegend();
-
-                foreach (var kvp in _latestFlowInjectionData)
+                foreach (var sampleKvp in _latestFlowInjectionData)
                 {
-                    if (kvp.Value.Count < 2) continue;
-                    var xs = kvp.Value.Select(p => p.Time).ToArray();
-                    var ys = kvp.Value.Select(p => p.Intensity).ToArray();
-                    var sp = plt.Add.ScatterLine(xs, ys);
-                    sp.LegendText = kvp.Key;
-                }
+                    string sampleName = sampleKvp.Key;
+                    var elementsData = sampleKvp.Value;
 
-                byte[] imgBytes = plt.GetImageBytes(600, 300, ImageFormat.Png);
-                FlowInjectionGraph = LoadImageFromBytes(imgBytes);
+                    var plt = new ScottPlot.Plot();
+                    plt.XLabel("时间 (s)");
+                    plt.YLabel("绝对发光强度");
+                    plt.Title($"流动注射全程时序曲线 - {sampleName}");
+                    plt.ShowLegend();
+
+                    bool hasData = false;
+                    foreach (var kvp in elementsData)
+                    {
+                        if (kvp.Value.Count < 2) continue;
+                        var xs = kvp.Value.Select(p => p.Time).ToArray();
+                        var ys = kvp.Value.Select(p => p.Intensity).ToArray();
+                        var sp = plt.Add.ScatterLine(xs, ys);
+                        sp.LegendText = kvp.Key;
+                        hasData = true;
+                    }
+
+                    if (hasData)
+                    {
+                        byte[] imgBytes = plt.GetImageBytes(600, 300, ImageFormat.Png);
+                        FlowInjectionGraphs.Add(new ReportFlowInjectionGraph 
+                        {
+                            SampleName = sampleName,
+                            GraphImage = LoadImageFromBytes(imgBytes)
+                        });
+                    }
+                }
             }
-            else
-            {
-                FlowInjectionGraph = null;
-            }
-            OnPropertyChanged(nameof(HasFlowInjectionGraph));
+            OnPropertyChanged(nameof(HasFlowInjectionGraphs));
         }
 
         [RelayCommand]
