@@ -66,7 +66,7 @@ namespace GD_ControlCenter_WPF.ViewModels
         [ObservableProperty] private ObservableCollection<ReportFlowInjectionGraph> _flowInjectionGraphs = new();
         public bool HasFlowInjectionGraphs => FlowInjectionGraphs.Count > 0;
 
-        private Dictionary<string, Dictionary<string, List<PlotPoint>>>? _latestFlowInjectionData;
+        private List<FlowInjectionReportData> _latestFlowInjectionData = new();
 
         // 用于将后台生成的 FlowDocument 传给 View（因为 View 需要将它喂给 DocumentViewer 或进行 Print）
         public Action<FlowDocument>? OnPreviewReady;
@@ -77,8 +77,14 @@ namespace GD_ControlCenter_WPF.ViewModels
             WeakReferenceMessenger.Default.Register<SampleSequenceChangedMessage>(this, (r, m) =>
             {
                 _rawFullSequence = m.Value;
-                // 注意：为了防止在连续测量或流动注射时每次出峰都导致严重卡顿，
-                // 这里只接收数据，不自动重绘报告。用户需要手动点击“刷新预览”。
+                
+                // 任何新的序列变动（无论是连续进样还是流动注射），都先清空旧的时序图残留。
+                // 如果是流动注射模式，紧接着发出的 FlowInjectionDataExportMessage 会立刻将其重新填满。
+                // 这样彻底杜绝了“同名样品连续进样时带入上次流注图谱”的幽灵残留 Bug。
+                if (_latestFlowInjectionData != null)
+                {
+                    _latestFlowInjectionData.Clear();
+                }
             });
 
             WeakReferenceMessenger.Default.Register<FlowInjectionDataExportMessage>(this, (r, m) =>
@@ -236,10 +242,10 @@ namespace GD_ControlCenter_WPF.ViewModels
             FlowInjectionGraphs.Clear();
             if (_latestFlowInjectionData != null && _latestFlowInjectionData.Count > 0)
             {
-                foreach (var sampleKvp in _latestFlowInjectionData)
+                foreach (var reportData in _latestFlowInjectionData)
                 {
-                    string sampleName = sampleKvp.Key;
-                    var elementsData = sampleKvp.Value;
+                    string sampleName = reportData.SampleName;
+                    var elementsData = reportData.ElementData;
 
                     var plt = new ScottPlot.Plot();
                     plt.XLabel("时间 (s)");
@@ -271,7 +277,6 @@ namespace GD_ControlCenter_WPF.ViewModels
             }
             OnPropertyChanged(nameof(HasFlowInjectionGraphs));
         }
-
         [RelayCommand]
         private void PreviewReport()
         {

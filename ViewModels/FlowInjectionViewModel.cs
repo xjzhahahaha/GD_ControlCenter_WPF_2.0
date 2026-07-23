@@ -166,7 +166,7 @@ namespace GD_ControlCenter_WPF.ViewModels
                 double timeOffset = 0;
                 if (_currentScanPointStartIndex > 0)
                 {
-                    timeOffset = _scanBuffers.Values.First().Last().Time;
+                    timeOffset = _scanBuffers.Values.First().Last().Time + 1.0; // 留出 1秒 的间隔
                 }
                 _scanStartTime = DateTime.Now.AddSeconds(-timeOffset);
                 
@@ -186,6 +186,8 @@ namespace GD_ControlCenter_WPF.ViewModels
                     foreach (var conf in _elementConfigVM.SelectedConfigs)
                     {
                         string key = $"{conf.ElementName}({conf.Wavelength})";
+                        // 按照您的要求，恢复与原来寻峰算法一致的 ±1.0 nm 动态搜索大窗口
+                        // 这样可以确保它能完全像常规测量一样自动爬到最高点（但也请注意如果样品里有靠得很近的强基体峰，依然可能存在吸附现象）
                         double realWl = SpectrometerLogic.GetActualPeakWavelength(frame, conf.Wavelength, 1.0);
                         double intensity = SpectrometerLogic.GetIntensityAtWavelength(frame, realWl);
 
@@ -224,75 +226,117 @@ namespace GD_ControlCenter_WPF.ViewModels
                 if (ec.Reps == null) ec.Reps = new ObservableCollection<MeasurementRepModel>();
             }
 
-            int currentRepIndex = (CurrentSample.ElementConcentrations.Max(e => (int?)e.Reps.Count) ?? 0) + 1;
-            
-            foreach (var conf in _elementConfigVM.SelectedConfigs)
+            int startRepIndex = (CurrentSample.ElementConcentrations.Max(e => (int?)e.Reps.Count) ?? 0) + 1;
+
+            // --- 1. 寻找最佳主参考通道 (信号最强、扣除基线后峰高最高的通道) ---
+            string bestReferenceKey = null;
+            double maxReferenceHeight = -1;
+            double bestGlobalBaseline = 0;
+            List<PlotPoint> bestCurrentPoints = null;
+
+            var validConfigs = _elementConfigVM.SelectedConfigs.Where(c => _scanBuffers.ContainsKey($"{c.ElementName}({c.Wavelength})")).ToList();
+            if (validConfigs.Count == 0) return;
+
+            foreach (var conf in validConfigs)
             {
                 string key = $"{conf.ElementName}({conf.Wavelength})";
-                if (!_scanBuffers.ContainsKey(key)) continue;
-
-                var dataPoints = _scanBuffers[key];
-                var currentPoints = dataPoints.Skip(_currentScanPointStartIndex).ToList();
+                var currentPoints = _scanBuffers[key].Skip(_currentScanPointStartIndex).ToList();
                 if (currentPoints.Count < 3) continue;
-                
-                // --- 自动寻峰算法 ---
-                // 1. 寻找本次注射中的绝对最大值作为峰顶
-                var maxPoint = currentPoints.OrderByDescending(p => p.Intensity).First();
-                int maxIndex = dataPoints.LastIndexOf(maxPoint);
-                
-                // 2. 估计基线水平 (取本次所有点中最低的 5% 的均值作为基线参考)
-                var sortedIntensities = currentPoints.Select(p => p.Intensity).OrderBy(i => i).ToList();
-                int baselineCount = Math.Max(1, sortedIntensities.Count / 20); 
-                double globalBaseline = sortedIntensities.Take(baselineCount).Average();
 
-                // 3. 定义起落峰阈值：基线之上 + 峰高(相对于基线)的 5%
-                double peakHeightRough = maxPoint.Intensity - globalBaseline;
-                double threshold = globalBaseline + peakHeightRough * 0.05;
+                double baseline = CalculateGlobalBaseline(currentPoints);
+                double maxHeight = currentPoints.Max(p => p.Intensity) - baseline;
 
-                // 4. 从峰顶向左寻找起峰点（注意不要越界到上一次注射的数据）
-                int startIndex = maxIndex;
-                while (startIndex > _currentScanPointStartIndex && dataPoints[startIndex].Intensity > threshold)
+                if (maxHeight > maxReferenceHeight)
                 {
-                    startIndex--;
+                    maxReferenceHeight = maxHeight;
+                    bestReferenceKey = key;
+                    bestGlobalBaseline = baseline;
+                    bestCurrentPoints = currentPoints;
                 }
+            }
 
-                // 5. 从峰顶向右寻找落峰点
-                int endIndex = maxIndex;
-                while (endIndex < dataPoints.Count - 1 && dataPoints[endIndex].Intensity > threshold)
-                {
-                    endIndex++;
-                }
+            if (bestReferenceKey == null || bestCurrentPoints == null) return;
 
-                // 6. 确定该窗口内的最终局部基线 (起终点的连线或直接取均值，这里简化为两端最小值)
-                double localBaseline = Math.Min(dataPoints[startIndex].Intensity, dataPoints[endIndex].Intensity);
+            // --- 2. 在主参考通道上划定独立注射的时间窗口 ---
+            // 如果主通道最高峰还不到 300，说明可能全是一片空白噪声，没有有效峰，兜底当做 1 次测量
+            List<Tuple<int, int>> peakWindows = new List<Tuple<int, int>>();
+            
+            if (maxReferenceHeight > 300)
+            {
+                double threshold = bestGlobalBaseline + maxReferenceHeight * 0.10; // 10% 阈值切峰
+                bool inPeak = false;
+                int currentPeakStart = 0;
                 
-                // 7. 计算精准峰高和梯形积分面积
-                double exactPeakHeight = maxPoint.Intensity - localBaseline;
-                double peakArea = 0;
-                for (int i = startIndex; i < endIndex; i++)
+                for (int i = 0; i < bestCurrentPoints.Count; i++)
                 {
-                    double dt = dataPoints[i + 1].Time - dataPoints[i].Time;
-                    double y1 = Math.Max(0, dataPoints[i].Intensity - localBaseline);
-                    double y2 = Math.Max(0, dataPoints[i + 1].Intensity - localBaseline);
-                    peakArea += (y1 + y2) * dt / 2.0;
+                    if (!inPeak && bestCurrentPoints[i].Intensity > threshold)
+                    {
+                        inPeak = true;
+                        currentPeakStart = i;
+                    }
+                    else if (inPeak && (bestCurrentPoints[i].Intensity <= threshold || i == bestCurrentPoints.Count - 1))
+                    {
+                        inPeak = false;
+                        // 过滤掉太窄的噪声毛刺 (至少要持续几个点才算有效的峰)
+                        if (i - currentPeakStart > 2)
+                        {
+                            peakWindows.Add(new Tuple<int, int>(currentPeakStart, i));
+                        }
+                    }
                 }
+            }
 
-                // 注意：此处不再维护单次峰值明细 ScanRecords，改为由 ElementConcentrations 汇总展示
+            // 如果没切出任何有效的峰，或者全是空白，默认将整段作为一个大窗口
+            if (peakWindows.Count == 0)
+            {
+                peakWindows.Add(new Tuple<int, int>(0, bestCurrentPoints.Count - 1));
+            }
 
-                // --- 将 PeakIntensity (峰高) 存入 CurrentSample 的浓度模型中作为主流测量值 ---
-                // 注：当出现平顶峰（稳态）时，使用峰高代表浓度比面积更准确
+            // --- 3. 同步测算全通道 (统一应用时间窗口) ---
+            foreach (var conf in validConfigs)
+            {
+                string key = $"{conf.ElementName}({conf.Wavelength})";
+                var currentPoints = _scanBuffers[key].Skip(_currentScanPointStartIndex).ToList();
+                if (currentPoints.Count < 3) continue;
+
                 var targetRow = CurrentSample.ElementConcentrations.FirstOrDefault(e => e.ElementName == key || e.ElementName == conf.ElementName);
-                if (targetRow != null)
+                if (targetRow == null) continue;
+
+                double elementGlobalBaseline = CalculateGlobalBaseline(currentPoints);
+                
+                int repOffset = 0;
+                foreach (var window in peakWindows)
                 {
+                    int startIndex = window.Item1;
+                    int endIndex = Math.Min(window.Item2, currentPoints.Count - 1);
+                    
+                    if (startIndex > endIndex) continue;
+
+                    // 在这个公共时间窗内，寻找该元素自己的最高点
+                    double localMaxIntensity = elementGlobalBaseline; // 兜底为基线
+                    for (int i = startIndex; i <= endIndex; i++)
+                    {
+                        if (currentPoints[i].Intensity > localMaxIntensity)
+                        {
+                            localMaxIntensity = currentPoints[i].Intensity;
+                        }
+                    }
+
+                    double exactPeakHeight = localMaxIntensity - elementGlobalBaseline;
+                    if (exactPeakHeight < 0) exactPeakHeight = 0;
+
+                    int repIndex = startRepIndex + repOffset;
                     Application.Current.Dispatcher.Invoke(() => 
                     {
                         targetRow.Reps.Add(new MeasurementRepModel 
                         { 
-                            RepIndex = currentRepIndex, 
+                            RepIndex = repIndex, 
                             Intensity = Math.Round(exactPeakHeight, 2), 
                             IsMeasuring = false 
                         });
                     });
+                    
+                    repOffset++;
                 }
             }
 
@@ -303,14 +347,76 @@ namespace GD_ControlCenter_WPF.ViewModels
             WeakReferenceMessenger.Default.Send(new SampleSequenceChangedMessage(MeasurementSequence.ToList()));
             
             // 广播最完整的时序曲线给报告模块画图（包含所有测过的样品）
-            var exportData = new Dictionary<string, Dictionary<string, List<PlotPoint>>>();
-            foreach (var kvp in _plotCache)
-            {
-                exportData[kvp.Key.SampleName] = kvp.Value;
-            }
+            var exportData = _plotCache.Select(kvp => new FlowInjectionReportData(kvp.Key.SampleName, kvp.Value)).ToList();
             WeakReferenceMessenger.Default.Send(new FlowInjectionDataExportMessage(exportData));
 
-            CollectionProgressText = $"第 {currentRepIndex} 次注射记录完成！等待下一次扫描或切至下一瓶。";
+            CollectionProgressText = $"共切分出 {peakWindows.Count} 次有效峰形！扫描结束。";
+        }
+
+        private double CalculateGlobalBaseline(List<PlotPoint> currentPoints)
+        {
+            var sortedIntensities = currentPoints.Select(p => p.Intensity).OrderBy(i => i).ToList();
+            double minInt = sortedIntensities.First();
+            double maxInt = sortedIntensities.Last();
+            int binCount = 50;
+            double binSize = (maxInt - minInt) / binCount;
+            if (binSize <= 0) binSize = 1;
+
+            int[] histogram = new int[binCount];
+            foreach (var p in currentPoints)
+            {
+                int bin = (int)((p.Intensity - minInt) / binSize);
+                if (bin >= binCount) bin = binCount - 1;
+                if (bin < 0) bin = 0;
+                histogram[bin]++;
+            }
+
+            int[] smoothedHist = new int[binCount];
+            for (int i = 0; i < binCount; i++)
+            {
+                smoothedHist[i] = histogram[i];
+                if (i > 0) smoothedHist[i] += histogram[i - 1];
+                if (i < binCount - 1) smoothedHist[i] += histogram[i + 1];
+            }
+
+            int thresholdCount = Math.Max(1, currentPoints.Count / 20); 
+            var modes = new List<int>();
+            for (int i = 0; i < binCount; i++)
+            {
+                if (smoothedHist[i] > thresholdCount)
+                {
+                    bool isLocalMax = true;
+                    if (i > 0 && smoothedHist[i - 1] > smoothedHist[i]) isLocalMax = false;
+                    if (i < binCount - 1 && smoothedHist[i + 1] > smoothedHist[i]) isLocalMax = false;
+                    
+                    if (isLocalMax && (modes.Count == 0 || modes.Last() != i - 1 || smoothedHist[modes.Last()] != smoothedHist[i]))
+                    {
+                        modes.Add(i);
+                    }
+                }
+            }
+
+            int baselineBin = 0;
+            if (modes.Count > 0)
+            {
+                var validModes = modes.Where(m => (minInt + m * binSize) > 100).ToList();
+                if (validModes.Count > 0)
+                {
+                    baselineBin = validModes.OrderBy(m => m).First();
+                }
+                else
+                {
+                    baselineBin = modes.OrderBy(m => m).First();
+                }
+            }
+            else
+            {
+                int maxBin = 0;
+                for (int i = 1; i < binCount; i++) if (smoothedHist[i] > smoothedHist[maxBin]) maxBin = i;
+                baselineBin = maxBin;
+            }
+
+            return minInt + baselineBin * binSize + binSize / 2.0;
         }
 
         private void CalculateOverallAveragesAndRsds()
@@ -392,10 +498,23 @@ namespace GD_ControlCenter_WPF.ViewModels
                     ec.Reps.Clear();
                 }
                 
-                // 广播更新
+                // 同时清空该样品对应的时序图缓存
+                if (_plotCache.ContainsKey(CurrentSample))
+                {
+                    _plotCache.Remove(CurrentSample);
+                }
+
+                // 通知前端清空图表显示
+                WeakReferenceMessenger.Default.Send(new FlowInjectionPlotBatchMessage(new Dictionary<string, List<PlotPoint>>()));
+                
+                // 广播更新序列表格
                 WeakReferenceMessenger.Default.Send(new SampleSequenceChangedMessage(MeasurementSequence.ToList()));
                 
-                MessageBox.Show("该样品的测量数据已成功清空！您可以随时重新开始扫描。", "已清空", MessageBoxButton.OK, MessageBoxImage.Information);
+                // 广播更新报告模块（移除该样品的图）
+                var exportData = _plotCache.Select(kvp => new FlowInjectionReportData(kvp.Key.SampleName, kvp.Value)).ToList();
+                WeakReferenceMessenger.Default.Send(new FlowInjectionDataExportMessage(exportData));
+                
+                MessageBox.Show("该样品的测量数据及历史时序图已成功清空！您可以随时重新开始扫描。", "已清空", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
     }

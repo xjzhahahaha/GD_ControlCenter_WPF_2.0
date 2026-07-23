@@ -52,7 +52,6 @@ namespace GD_ControlCenter_WPF.ViewModels
         // --- 【核心修复】：补齐之前遗漏声明的 5 个多次自动测试的核心属性 ---
         [ObservableProperty] private int _currentMeasurementIndex = 0; // 当前进行到第几次测量
         [ObservableProperty] private int _totalMeasurementCount = 3;  // 本次样品的总测量次数（自动绑定到Repeats）
-        [ObservableProperty] private int _singleMeasurementDuration = 2; // 单次测量积分采集持续时间 (秒)
         [ObservableProperty] private string _collectionProgressText = "就绪 - 等待启动采集"; // 状态进度提示
         [ObservableProperty] private string _detailedReadingsText = "暂无独立测试记录。"; // 各次测量值文本摘要
 
@@ -325,39 +324,30 @@ namespace GD_ControlCenter_WPF.ViewModels
                             }
                         }
 
-                        // 核心：在用户设定的单次积分秒数(SingleMeasurementDuration)内持续捕获并求均值
-                        double durationMs = SingleMeasurementDuration * 1000;
-                        CollectionProgressText = $"样品 [{CurrentSample.SampleName}] - 组内采集 {r + 1}/{runCount}: 持续积分中 ({SingleMeasurementDuration} 秒)...";
+                        // 核心：直接读取底层硬件设定好的一次光谱数据（积分时间*平均次数）
+                        CollectionProgressText = $"样品 [{CurrentSample.SampleName}] - 组内采集 {r + 1}/{runCount}: 正在采集底层硬件数据包...";
 
                         var runFramesBuffer = group.ToDictionary(
                             c => $"{c.ElementName}({c.Wavelength})",
                             _ => new List<double>()
                         );
 
-                        var startTime = DateTime.Now;
-                        int frameCount = 0;
+                        if (!IsCollecting) break;
 
-                        // 在设定的时间窗口内，持续读取最新的光谱数据帧
-                        while ((DateTime.Now - startTime).TotalMilliseconds < durationMs)
+                        SpectralData frame = await WaitForNextFrameAsync();
+
+                        if (frame != null)
                         {
-                            if (!IsCollecting) break;
+                            string elementsHeader = string.Join("|", group.Select(c => $"{c.ElementName}({c.Wavelength})"));
+                            cachedColumns.Add(($"{elementsHeader}_Rep{r + 1}_Frame1", frame));
 
-                            SpectralData frame = await WaitForNextFrameAsync();
-
-                            if (frame != null)
+                            foreach (var conf in group)
                             {
-                                frameCount++;
-                                string elementsHeader = string.Join("|", group.Select(c => $"{c.ElementName}({c.Wavelength})"));
-                                cachedColumns.Add(($"{elementsHeader}_Rep{r + 1}_Frame{frameCount}", frame));
+                                double realWl = SpectrometerLogic.GetActualPeakWavelength(frame, conf.Wavelength, 1.0);
+                                double realIntensity = SpectrometerLogic.GetIntensityAtWavelength(frame, realWl);
 
-                                foreach (var conf in group)
-                                {
-                                    double realWl = SpectrometerLogic.GetActualPeakWavelength(frame, conf.Wavelength, 1.0);
-                                    double realIntensity = SpectrometerLogic.GetIntensityAtWavelength(frame, realWl);
-
-                                    string key = $"{conf.ElementName}({conf.Wavelength})";
-                                    runFramesBuffer[key].Add(realIntensity);
-                                }
+                                string key = $"{conf.ElementName}({conf.Wavelength})";
+                                runFramesBuffer[key].Add(realIntensity);
                             }
                         }
 

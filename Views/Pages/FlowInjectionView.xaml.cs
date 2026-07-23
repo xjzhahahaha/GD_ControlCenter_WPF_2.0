@@ -12,7 +12,7 @@ namespace GD_ControlCenter_WPF.Views.Pages
 {
     public partial class FlowInjectionView : UserControl
     {
-        private readonly Dictionary<string, ScottPlot.Plottables.DataLogger> _dataLoggers = new();
+        private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _scatters = new();
         private readonly Color[] _palette = new[] { Colors.Red, Colors.Blue, Colors.Green, Colors.Orange, Colors.Purple, Colors.Magenta, Colors.Cyan, Colors.Olive };
 
         public FlowInjectionView()
@@ -37,7 +37,7 @@ namespace GD_ControlCenter_WPF.Views.Pages
                     Dispatcher.Invoke(() => 
                     {
                         TimeSeriesPlot.Plot.Clear();
-                        _dataLoggers.Clear();
+                        _scatters.Clear();
                         TimeSeriesPlot.Refresh();
                     });
                 }
@@ -70,20 +70,41 @@ namespace GD_ControlCenter_WPF.Views.Pages
 
         private void RenderTimeSeriesPoint(PlotPoint pt)
         {
-            if (!_dataLoggers.ContainsKey(pt.ElementName))
+            if (!_scatters.ContainsKey(pt.ElementName))
             {
-                var logger = TimeSeriesPlot.Plot.Add.DataLogger();
-                logger.LegendText = pt.ElementName;
-                logger.Color = _palette[_dataLoggers.Count % _palette.Length];
-                logger.LineWidth = 2;
-                _dataLoggers[pt.ElementName] = logger;
+                // 创建一个初始包含这个新点的 ScatterLine
+                double[] xs = new[] { pt.Time };
+                double[] ys = new[] { pt.Intensity };
+                var scatter = TimeSeriesPlot.Plot.Add.Scatter(xs, ys);
+                scatter.LegendText = pt.ElementName;
+                scatter.Color = _palette[_scatters.Count % _palette.Length];
+                scatter.LineWidth = 2;
+                scatter.MarkerSize = 0; // 实时刷新为了性能不画圆点
+                _scatters[pt.ElementName] = scatter;
                 TimeSeriesPlot.Plot.ShowLegend();
             }
-
-            _dataLoggers[pt.ElementName].Add(pt.Time, pt.Intensity);
+            else
+            {
+                var scatter = _scatters[pt.ElementName];
+                var oldXs = scatter.Data.GetScatterPoints().Select(p => p.X).ToList();
+                var oldYs = scatter.Data.GetScatterPoints().Select(p => p.Y).ToList();
+                oldXs.Add(pt.Time);
+                oldYs.Add(pt.Intensity);
+                
+                // 移除旧的曲线，添加新的曲线
+                TimeSeriesPlot.Plot.Remove(scatter);
+                
+                var newScatter = TimeSeriesPlot.Plot.Add.Scatter(oldXs.ToArray(), oldYs.ToArray());
+                newScatter.LegendText = pt.ElementName;
+                newScatter.Color = _palette[(_scatters.Keys.ToList().IndexOf(pt.ElementName)) % _palette.Length];
+                newScatter.LineWidth = 2;
+                newScatter.MarkerSize = 0;
+                
+                _scatters[pt.ElementName] = newScatter;
+            }
             
-            // 为了避免频繁触发全局重绘导致卡顿，我们让 ScottPlot 自己管理范围
-            if (_dataLoggers.Count > 0)
+            // 手动调整缩放，避免老数据被系统自动截断
+            if (_scatters.Count > 0)
             {
                 TimeSeriesPlot.Plot.Axes.AutoScale();
                 TimeSeriesPlot.Refresh();
@@ -93,7 +114,7 @@ namespace GD_ControlCenter_WPF.Views.Pages
         private void RenderTimeSeriesBatch(Dictionary<string, List<PlotPoint>> plotData)
         {
             TimeSeriesPlot.Plot.Clear();
-            _dataLoggers.Clear();
+            _scatters.Clear();
 
             foreach (var kvp in plotData)
             {
@@ -101,19 +122,18 @@ namespace GD_ControlCenter_WPF.Views.Pages
                 var points = kvp.Value;
                 if (points == null || points.Count == 0) continue;
 
-                var logger = TimeSeriesPlot.Plot.Add.DataLogger();
-                logger.LegendText = elementName;
-                logger.Color = _palette[_dataLoggers.Count % _palette.Length];
-                logger.LineWidth = 2;
-                _dataLoggers[elementName] = logger;
+                var xs = points.Select(p => p.Time).ToArray();
+                var ys = points.Select(p => p.Intensity).ToArray();
 
-                foreach (var pt in points)
-                {
-                    logger.Add(pt.Time, pt.Intensity);
-                }
+                var scatter = TimeSeriesPlot.Plot.Add.Scatter(xs, ys);
+                scatter.LegendText = elementName;
+                scatter.Color = _palette[_scatters.Count % _palette.Length];
+                scatter.LineWidth = 2;
+                scatter.MarkerSize = 0;
+                _scatters[elementName] = scatter;
             }
 
-            if (_dataLoggers.Count > 0)
+            if (_scatters.Count > 0)
             {
                 TimeSeriesPlot.Plot.ShowLegend();
                 TimeSeriesPlot.Plot.Axes.AutoScale();

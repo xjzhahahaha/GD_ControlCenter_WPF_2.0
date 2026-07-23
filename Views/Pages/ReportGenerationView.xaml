@@ -175,7 +175,7 @@
                         <TextBlock Text="提示：原生 PDF 导出将调用 Windows 虚拟打印机。" Margin="8,0,0,0" Opacity="0.7"/>
                     </StackPanel>
 
-                    <!-- 按钮组 -->
+                    <!-- 按钮区 -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <Button Content="刷新预览" Command="{Binding PreviewReportCommand}" Style="{StaticResource MaterialDesignOutlinedButton}" Background="White" Margin="0,0,8,0"/>
                         <Button Content="打印 / 导出 PDF" Command="{Binding ExportPdfCommand}" Style="{StaticResource MaterialDesignRaisedButton}" Background="#E53935" BorderBrush="#E53935" Margin="0,0,8,0">
