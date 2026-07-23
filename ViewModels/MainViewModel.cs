@@ -132,6 +132,10 @@ namespace GD_ControlCenter_WPF.ViewModels
                 {
                     CurrentPage = AnalysisWorkstationVM;
                 }
+                else if (m.Value == "DataProcessing")
+                {
+                    CurrentPage = DataProcessingVM;
+                }
                 else if (m.Value == "ReportGeneration")
                 {
                     CurrentPage = ReportGenerationVM;

@@ -33,6 +33,14 @@ namespace GD_ControlCenter_WPF.Views.Components
                     {
                         MainTabControl.SelectedIndex = 4;
                     }
+                    else if (m.Value == "DataProcessing")
+                    {
+                        MainTabControl.SelectedIndex = 5;
+                    }
+                    else if (m.Value == "ReportGeneration")
+                    {
+                        MainTabControl.SelectedIndex = 6;
+                    }
                 });
             });
         }
