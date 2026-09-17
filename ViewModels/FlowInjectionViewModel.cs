@@ -48,6 +48,19 @@ namespace GD_ControlCenter_WPF.ViewModels
                 {
                     CurrentSample = MeasurementSequence[0];
                 }
+                
+                // 清理已经从序列中删除的样品的图谱缓存
+                var currentSampleNames = MeasurementSequence.Select(s => s.SampleName).ToHashSet();
+                var keysToRemove = _plotCache.Keys.Where(k => !currentSampleNames.Contains(k.SampleName)).ToList();
+                foreach (var key in keysToRemove)
+                {
+                    _plotCache.Remove(key);
+                }
+            });
+
+            WeakReferenceMessenger.Default.Register<ContinuousMeasurementStartedMessage>(this, (r, m) => {
+                _plotCache.Clear();
+                _scanBuffers.Clear();
             });
             
             // 初始化 PickedElements，供 View 层分配颜色
@@ -101,6 +114,8 @@ namespace GD_ControlCenter_WPF.ViewModels
             GC.KeepAlive(token);
             return result;
         }
+
+
 
         [RelayCommand]
         private async Task StartScan()

@@ -214,7 +214,10 @@ namespace GD_ControlCenter_WPF.ViewModels
         private async Task StartCollecting()
         {
             if (CurrentSample == null) { MessageBox.Show("请先选择左侧的样品！", "警告", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-            if (PickedElements.Count == 0) { MessageBox.Show("请先在主界面选择要监控的元素特征！", "警告", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (PickedElements.Count == 0) { MessageBox.Show("请先在主界面选择要监控的元素特征峰", "警告", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+
+            // 触发连续进样，报告模块需要清空历史的流动注射图谱
+            WeakReferenceMessenger.Default.Send(new ContinuousMeasurementStartedMessage());
 
             if (SpectrometerManager.Instance.Devices.Count == 0)
             {

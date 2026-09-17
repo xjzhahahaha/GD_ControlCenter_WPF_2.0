@@ -106,4 +106,8 @@ namespace GD_ControlCenter_WPF.Models.Messages
     {
         public NavigateMessage(string value) : base(value) { }
     }
+
+    public class ContinuousMeasurementStartedMessage
+    {
+    }
 }

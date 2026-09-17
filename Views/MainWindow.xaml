@@ -15,6 +15,7 @@
         ResizeMode="CanResize"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}"
         Background="{DynamicResource MaterialDesignPaper}"
+        WindowState="Maximized"
         WindowStartupLocation="CenterScreen">
 
     <Grid>

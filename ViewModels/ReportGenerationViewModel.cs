@@ -77,10 +77,11 @@ namespace GD_ControlCenter_WPF.ViewModels
             WeakReferenceMessenger.Default.Register<SampleSequenceChangedMessage>(this, (r, m) =>
             {
                 _rawFullSequence = m.Value;
-                
-                // 任何新的序列变动（无论是连续进样还是流动注射），都先清空旧的时序图残留。
-                // 如果是流动注射模式，紧接着发出的 FlowInjectionDataExportMessage 会立刻将其重新填满。
-                // 这样彻底杜绝了“同名样品连续进样时带入上次流注图谱”的幽灵残留 Bug。
+            });
+
+            WeakReferenceMessenger.Default.Register<ContinuousMeasurementStartedMessage>(this, (r, m) =>
+            {
+                // 如果开启了连续进样模式，清空历史的流动注射图谱残留
                 if (_latestFlowInjectionData != null)
                 {
                     _latestFlowInjectionData.Clear();

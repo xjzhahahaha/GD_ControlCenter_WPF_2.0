@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="GD_ControlCenter_WPF.Views.Pages.DataProcessingView"
+<UserControl x:Class="GD_ControlCenter_WPF.Views.Pages.DataProcessingView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
@@ -30,36 +30,40 @@
                 <!-- 2. 采集结果(重构) -->
             </Grid.RowDefinitions>
 
-            <!-- 0. 顶部栏：元素选择 (保持原样) -->
+            <!-- 0. 顶部栏：元素选择 (优化布局，自适应防裁剪) -->
             <materialDesign:Card Grid.Row="0" Margin="0,0,0,8" UniformCornerRadius="8" materialDesign:ElevationAssist.Elevation="Dp2">
-                <StackPanel Orientation="Horizontal" Margin="15,10">
-                    <!-- 标题区 -->
-                    <materialDesign:PackIcon Kind="GoogleAnalytics" VerticalAlignment="Center" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
-                    <TextBlock Text="数据处理中心" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,20,0"/>
+                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" Margin="10,8">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- 标题区 -->
+                        <materialDesign:PackIcon Kind="GoogleAnalytics" VerticalAlignment="Center" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                        <TextBlock Text="数据处理中心" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,15,0"/>
 
-                    <Separator Style="{StaticResource MaterialDesignLightSeparator}" Width="2" Height="24" Margin="0,0,20,0">
-                        <Separator.LayoutTransform>
-                            <RotateTransform Angle="90"/>
-                        </Separator.LayoutTransform>
-                    </Separator>
+                        <Separator Style="{StaticResource MaterialDesignLightSeparator}" Width="2" Height="24" Margin="0,0,15,0">
+                            <Separator.LayoutTransform>
+                                <RotateTransform Angle="90"/>
+                            </Separator.LayoutTransform>
+                        </Separator>
 
-                    <!-- 元素选择区 -->
-                    <TextBlock Text="当前分析元素:" VerticalAlignment="Center" Opacity="0.7" Margin="0,0,10,0"/>
-                    <ComboBox Width="120" ItemsSource="{Binding ActiveElements}" 
-                  SelectedItem="{Binding SelectedElement}" 
-                  Style="{StaticResource MaterialDesignOutlinedComboBox}" />
+                        <!-- 元素选择区 -->
+                        <TextBlock Text="当前分析元素:" VerticalAlignment="Center" Opacity="0.7" Margin="0,0,8,0"/>
+                        <ComboBox Width="110" ItemsSource="{Binding ActiveElements}" 
+                                  SelectedItem="{Binding SelectedElement}" 
+                                  VerticalAlignment="Center"
+                                  Style="{StaticResource MaterialDesignOutlinedComboBox}" />
 
-                    <!-- 【新增】：导入数据按钮 -->
-                    <Button Command="{Binding ImportExternalDataCommand}" 
-                Style="{StaticResource MaterialDesignFlatButton}" 
-                Margin="12,0,0,0"
-                ToolTip="导入之前导出的实验快照 (.json)">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="FileImport" VerticalAlignment="Center" Width="20" Height="20"/>
-                            <TextBlock Text="导入数据" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+                        <!-- 导入数据按钮 -->
+                        <Button Command="{Binding ImportExternalDataCommand}" 
+                                Style="{StaticResource MaterialDesignFlatButton}" 
+                                VerticalAlignment="Center"
+                                Margin="10,0,0,0"
+                                ToolTip="导入之前导出的实验快照 (.json)">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="FileImport" VerticalAlignment="Center" Width="20" Height="20"/>
+                                <TextBlock Text="导入数据" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Viewbox>
             </materialDesign:Card>
 
             <!-- 1. 中部：校准曲线图 (保持原样) -->

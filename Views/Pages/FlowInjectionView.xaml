@@ -31,7 +31,9 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Text="流动注射任务序列" FontWeight="Bold" FontSize="16" Margin="0,0,0,10" Opacity="0.6"/>
+                <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                    <TextBlock Text="流动注射任务序列" FontWeight="Bold" FontSize="16" Opacity="0.6" VerticalAlignment="Center"/>
+                </DockPanel>
 
                 <DataGrid Grid.Row="1" ItemsSource="{Binding MeasurementSequence}" 
                           SelectedItem="{Binding CurrentSample}"
