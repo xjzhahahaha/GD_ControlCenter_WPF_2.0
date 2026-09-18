@@ -111,7 +111,9 @@ namespace GD_ControlCenter_WPF.Services
                     StopBits = StopBits.One,
                     Parity = Parity.None,
                     ReadTimeout = 500,
-                    WriteTimeout = 500
+                    WriteTimeout = 500,
+                    DtrEnable = true,
+                    RtsEnable = true
                 };
 
                 _serialPort.DataReceived += OnSerialDataReceived;
@@ -127,8 +129,9 @@ namespace GD_ControlCenter_WPF.Services
 
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                System.Windows.MessageBox.Show($"串口打开失败: {ex.Message}\n堆栈: {ex.StackTrace}", "串口报错", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
                 return false;
             }
         }

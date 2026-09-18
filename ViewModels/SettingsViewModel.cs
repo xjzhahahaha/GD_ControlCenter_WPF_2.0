@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using GD_ControlCenter_WPF.Models.Messages;
@@ -257,15 +257,16 @@ namespace GD_ControlCenter_WPF.ViewModels
         {
             if (string.IsNullOrEmpty(SelectedPort)) return;
 
-            // 状态防重：若已连接当前选中的串口则忽略
-            if (_serialService.IsOpen && _serialService.CurrentPortName == SelectedPort) return;
-
-            // 互斥：先关闭旧连接再尝试新连接
+            // 取消状态拦截，允许用户强制重连（应对设备拔插后假死的情况）
+            // 预防：先关闭旧串口
             if (_serialService.IsOpen) _serialService.Close();
+
+            // 如果刚刚在后台触发了关闭，稍微等待一下释放底层句柄
+            System.Threading.Thread.Sleep(500);
 
             if (!_serialService.Open(SelectedPort, BAUD_RATE))
             {
-                MessageBox.Show($"无法打开串口 {SelectedPort}，该设备可能正在被其他程序占用。", "连接冲突", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"无法打开串口 {SelectedPort}，设备可能被占用或不存在。", "连接冲突", MessageBoxButton.OK, MessageBoxImage.Error);
             }
 
             UpdateStatusUI();

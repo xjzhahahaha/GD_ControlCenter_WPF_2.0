@@ -273,15 +273,18 @@ namespace GD_ControlCenter_WPF.ViewModels
             if (bestReferenceKey == null || bestCurrentPoints == null) return;
 
             // --- 2. 在主参考通道上划定独立注射的时间窗口 ---
-            // 如果主通道最高峰还不到 300，说明可能全是一片空白噪声，没有有效峰，兜底当做 1 次测量
+            // 如果主通道最高峰还不到 50，说明可能全是一片空白噪声，没有有效峰，兜底当做 1 次测量
             List<Tuple<int, int>> peakWindows = new List<Tuple<int, int>>();
             
-            if (maxReferenceHeight > 300)
+            if (maxReferenceHeight > 50)
             {
-                double threshold = bestGlobalBaseline + maxReferenceHeight * 0.10; // 10% 阈值切峰
+                // 使用 25% 阈值切分，防止基线附近的毛刺噪声被当成峰
+                double threshold = bestGlobalBaseline + maxReferenceHeight * 0.25; 
                 bool inPeak = false;
                 int currentPeakStart = 0;
                 
+                // 第一步：初步找出所有穿过阈值的窗口（暂不限制宽度）
+                List<Tuple<int, int>> rawWindows = new List<Tuple<int, int>>();
                 for (int i = 0; i < bestCurrentPoints.Count; i++)
                 {
                     if (!inPeak && bestCurrentPoints[i].Intensity > threshold)
@@ -292,11 +295,40 @@ namespace GD_ControlCenter_WPF.ViewModels
                     else if (inPeak && (bestCurrentPoints[i].Intensity <= threshold || i == bestCurrentPoints.Count - 1))
                     {
                         inPeak = false;
-                        // 过滤掉太窄的噪声毛刺 (至少要持续几个点才算有效的峰)
-                        if (i - currentPeakStart > 2)
+                        rawWindows.Add(new Tuple<int, int>(currentPeakStart, i));
+                    }
+                }
+
+                // 第二步：合并距离过近的窗口（完美解决单次进样过程中，因剧烈波动跌破阈值而导致的“一峰变多峰”断层现象）
+                List<Tuple<int, int>> mergedWindows = new List<Tuple<int, int>>();
+                int mergeTolerance = 15; // 允许的断层间隙（比如15个点以内的跌落坑，会被重新缝合为一个完整的大波峰）
+                foreach (var w in rawWindows)
+                {
+                    if (mergedWindows.Count == 0)
+                    {
+                        mergedWindows.Add(w);
+                    }
+                    else
+                    {
+                        var last = mergedWindows.Last();
+                        // 如果当前窗口的起点，距离上一个窗口的终点小于容忍度，则合并
+                        if (w.Item1 - last.Item2 <= mergeTolerance)
                         {
-                            peakWindows.Add(new Tuple<int, int>(currentPeakStart, i));
+                            mergedWindows[mergedWindows.Count - 1] = new Tuple<int, int>(last.Item1, w.Item2);
                         }
+                        else
+                        {
+                            mergedWindows.Add(w);
+                        }
+                    }
+                }
+
+                // 第三步：过滤掉合并后依然太窄的纯孤立毛刺 (真实的流动注射峰通常宽度至少有10个点以上)
+                foreach (var w in mergedWindows)
+                {
+                    if (w.Item2 - w.Item1 >= 8)
+                    {
+                        peakWindows.Add(w);
                     }
                 }
             }
